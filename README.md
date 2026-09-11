@@ -302,8 +302,6 @@ python -m unittest discover -s tests -v
 python -m compileall main.py src scripts tests
 ```
 
-O repositório inclui também um workflow em `.github/workflows/tests.yml`, executado automaticamente pelo GitHub Actions em `push` e `pull_request`.
-
 ## Reprodutibilidade
 
 Para comparações válidas, mantenha a mesma semente e divisão entre os cenários, nunca gere sintéticas a partir de validação/teste e versione o `config.yaml` usado no experimento. Datasets, checkpoints e resultados pesados não devem ser versionados no repositório.
