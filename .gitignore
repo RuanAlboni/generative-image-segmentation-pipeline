@@ -1,0 +1,40 @@
+# Ambiente Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE / sistema operacional
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Datasets e imagens geradas
+original/**/*
+!original/**/.gitkeep
+aumentado/**/*
+!aumentado/**/.gitkeep
+teste/**/*
+!teste/**/.gitkeep
+particoes/
+
+# Modelos e checkpoints
+modelos/**/*
+!modelos/**/.gitkeep
+modelos_difusao/**/*
+!modelos_difusao/**/.gitkeep
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# Resultados experimentais
+resultados/**/*
+!resultados/**/.gitkeep
+
+# Pacotes locais de dados
+*.zip

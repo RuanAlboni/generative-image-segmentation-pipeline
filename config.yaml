@@ -1,0 +1,119 @@
+experimento:
+  nome: experimento_segmentacao_generico
+  semente: 12345
+  deterministico: true
+
+# As classes abaixo sao categorias de imagens/casos usadas para organizacao,
+# estratificacao, prompts e relatorios. A segmentacao do modelo continua binaria:
+# fundo (0) vs regiao de interesse (1).
+#
+# Este arquivo e um exemplo generico. Uma configuracao pronta para o BUSI,
+# usada no TCC, esta disponivel em `configs/busi.yaml`. Ajuste os nomes em
+# `classes`, aliases opcionais e `classes_sem_mascara` conforme seu dataset.
+dados:
+  classes: [classe_a, classe_b, controle]
+  aliases: {}
+  classes_sem_mascara: [controle]
+
+# Caminhos relativos sao resolvidos a partir da raiz do projeto.
+# Por padrao, a raiz e a pasta do YAML; `projeto.raiz` pode sobrescrever isso.
+caminhos:
+  original: original
+  aumentado: aumentado
+  teste: teste
+  modelos: modelos
+  resultados: resultados
+
+# Opcional: preencha para executar `python main.py preparar` sem informar os ZIPs na CLI.
+fontes:
+  zip_dataset: null
+  zip_teste: null
+
+divisao:
+  # Usada somente quando `preparar` recebe um unico ZIP. O restante forma o
+  # conjunto de desenvolvimento, que depois e dividido em treino/validacao.
+  proporcao_teste: 0.15
+
+  # Proporcoes relativas ao conjunto de desenvolvimento. A mesma divisao
+  # estratificada e usada nos dois cenarios de treinamento.
+  proporcao_treino: 0.85
+  proporcao_validacao: 0.15
+
+difusao:
+  # Coloque seu checkpoint com este nome na pasta modelos_difusao.
+  # Tambem aceita uma pasta Diffusers ou um ID do Hugging Face.
+  modelo: modelos_difusao/sdxl_base_1.0.safetensors
+  pipeline: sdxl
+  dispositivo: auto
+  # Configuracoes leves usadas para interpretar o checkpoint unico.
+  # Na primeira execucao elas podem ser obtidas do Hub e ficam em cache.
+  config_checkpoint: stabilityai/stable-diffusion-xl-base-1.0
+  # Mantenha false na primeira execucao. Depois do cache, pode mudar para true.
+  somente_arquivos_locais: false
+  strength: 0.20
+  guidance_scale: 1.5
+  passos: 20
+  variacoes_por_imagem: 1
+  multiplo_resolucao: 8
+  ignorar_existentes: true
+  attention_slicing: true
+  vae_tiling: true
+  offload_cpu: false
+  karras_sigmas: true
+  # Ajuste os prompts ao dominio e aos nomes definidos em dados.classes.
+  # Uma classe sem entrada em por_classe usa apenas o prompt comum.
+  prompts:
+    comum: >-
+      preserve the original structure and geometry, realistic image,
+      preserve relevant regions and boundaries
+    por_classe: {}
+    negativo: >-
+      text, watermark, artificial geometry, distorted structure,
+      excessive blur, oversharpening, unrealistic artifacts
+
+watershed:
+  # Marker-controlled watershed guiado pela mascara da imagem de origem.
+  # Rotulo 1: afinamento (thinning) da mascara original.
+  # Rotulo 2: borda obtida pelo gradiente morfologico apos uma dilatacao ampla.
+  dilatacao_externa_kernel: 7
+  dilatacao_externa_iteracoes: 4
+  gradiente_dilatacao_kernel: 3
+
+  # Superficie topografica usada pelo watershed na imagem sintetica em cinza.
+  # Opcoes: sobel ou morfologico.
+  gradiente_imagem: sobel
+  sobel_kernel: 3
+  gradiente_morfologico_kernel: 3
+  linha_watershed: true
+
+modelo_segmentacao:
+  arquitetura: Unet
+  encoder: mobilenet_v2
+  pesos_encoder: imagenet
+  canais_entrada: 3
+
+treinamento:
+  dispositivo: auto
+  tamanho_imagem: [256, 256]
+  batch_size: 4
+  epocas: 50
+  learning_rate: 0.0001
+  weight_decay: 0.00001
+  num_workers: 0
+  peso_bce: 0.5
+  peso_dice: 0.5
+  limiar: 0.5
+  paciencia: 10
+  min_delta: 0.0001
+  amp: true
+  # Desativado por padrao para isolar o efeito do aumento generativo.
+  flip_horizontal: false
+  normalizacao_media: [0.485, 0.456, 0.406]
+  normalizacao_desvio: [0.229, 0.224, 0.225]
+
+avaliacao:
+  dispositivo: auto
+  limiar: 0.5
+  salvar_sobreposicoes: true
+  # null salva todas as comparacoes do teste; use um inteiro para limitar.
+  max_sobreposicoes: null

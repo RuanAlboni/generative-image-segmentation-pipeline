@@ -1,0 +1,8 @@
+cff-version: 1.2.0
+message: "Se você utilizar este software em trabalho acadêmico, cite este repositório."
+title: "Pipeline de segmentação binária com aumento generativo"
+type: software
+authors:
+  - family-names: Ferreira
+    given-names: Ruan Alboni
+license: MIT

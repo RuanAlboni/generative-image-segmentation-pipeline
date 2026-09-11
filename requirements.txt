@@ -1,0 +1,12 @@
+# Instale torch/torchvision separadamente conforme CPU/CUDA; veja README.md.
+numpy>=1.26,<3
+Pillow>=10.0
+PyYAML>=6.0
+matplotlib>=3.8
+opencv-python-headless>=4.9
+scikit-image>=0.24
+segmentation-models-pytorch>=0.4
+diffusers>=0.30
+transformers>=4.44
+accelerate>=0.33
+safetensors>=0.4
