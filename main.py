@@ -18,7 +18,7 @@ from src.dados import (
     importar_zip_unico_com_divisao,
     limpar_conjunto_dataset,
     materializar_divisao,
-    salvar_manifesto_divisao,
+    salvar_manifesto_desenvolvimento_teste,
     validar_proporcoes_divisao,
 )
 
@@ -105,36 +105,31 @@ def preparar(args, config: dict[str, Any]) -> dict[str, Any]:
         classes_sem_mascara=classes_sem_mascara,
     )
     if originais:
-        proporcao_treino = float(config["divisao"]["proporcao_treino"])
-        proporcao_validacao = float(config["divisao"].get("proporcao_validacao", 1.0 - proporcao_treino))
-        validar_proporcoes_divisao(proporcao_treino, proporcao_validacao)
-        treino, validacao = dividir_originais(
-            originais,
-            proporcao_treino,
-            semente,
-            classes=classes,
-        )
         teste = coletar_amostras(
             caminho_configurado(config, "teste"),
             classes=classes,
             incluir_sinteticas=False,
             classes_sem_mascara=classes_sem_mascara,
         )
-        manifesto = salvar_manifesto_divisao(
-            treino,
-            validacao,
+        manifesto = salvar_manifesto_desenvolvimento_teste(
+            originais,
+            teste,
             caminho_configurado(config, "resultados") / "divisao_preparacao.csv",
-            teste=teste,
             raiz_referencia=raiz,
         )
         resultado["divisao"] = {
-            "treino": len(treino),
-            "validacao": len(validacao),
+            "desenvolvimento": len(originais),
             "teste": len(teste),
             "manifesto": str(manifesto),
         }
 
+        # Opcional: materializa uma unica divisao apenas para depuracao rapida.
+        # A validacao experimental principal e feita por StratifiedKFold no treino.
         if args.exportar_divisao:
+            proporcao_treino = float(config["divisao"].get("proporcao_treino", 0.8))
+            proporcao_validacao = float(config["divisao"].get("proporcao_validacao", 1.0 - proporcao_treino))
+            validar_proporcoes_divisao(proporcao_treino, proporcao_validacao)
+            treino, validacao = dividir_originais(originais, proporcao_treino, semente, classes=classes)
             destino = caminho_do_projeto(config, args.exportar_divisao)
             resultado["divisao_materializada"] = materializar_divisao(
                 treino,
@@ -187,7 +182,7 @@ def construir_parser() -> argparse.ArgumentParser:
         "preparar",
         help=(
             "Prepara os dados: aceita desenvolvimento+teste separados ou divide "
-            "automaticamente um unico ZIP em desenvolvimento/teste e treino/validacao."
+            "automaticamente um unico ZIP em desenvolvimento e teste externo fixo."
         ),
     )
     p_preparar.add_argument(
@@ -207,8 +202,8 @@ def construir_parser() -> argparse.ArgumentParser:
         const="particoes",
         metavar="PASTA",
         help=(
-            "Materializa a mesma divisao usada pelo pipeline em treino/ e validacao/. "
-            "Sem PASTA, usa ./particoes."
+            "Materializa uma divisao treino/validacao simples apenas para depuracao. "
+            "A validacao principal usa StratifiedKFold. Sem PASTA, usa ./particoes."
         ),
     )
     p_preparar.add_argument("--sobrescrever", action="store_true")
@@ -230,7 +225,15 @@ def construir_parser() -> argparse.ArgumentParser:
         help="Salva um painel e imagens de cada etapa do watershed para inspecao visual.",
     )
 
-    sub.add_parser("treinar", help="Treina os modelos dos cenarios original e aumentado.")
+    p_treinar = sub.add_parser(
+        "treinar",
+        help="Executa StratifiedKFold e treina os modelos finais; use --modo-simples para depuracao.",
+    )
+    p_treinar.add_argument(
+        "--modo-simples",
+        action="store_true",
+        help="Usa uma unica divisao treino/validacao, sem validacao cruzada.",
+    )
 
     p_avaliar = sub.add_parser("avaliar", help="Avalia os dois modelos no conjunto de teste externo.")
     p_avaliar.add_argument("--limite", type=int)
@@ -238,6 +241,11 @@ def construir_parser() -> argparse.ArgumentParser:
     p_pipeline = sub.add_parser("pipeline", help="Executa difusao, mascaras, treino e avaliacao.")
     p_pipeline.add_argument("--limite-geracao", type=int)
     p_pipeline.add_argument("--limite-avaliacao", type=int)
+    p_pipeline.add_argument(
+        "--modo-simples",
+        action="store_true",
+        help="Executa treinamento com uma unica divisao em vez do StratifiedKFold.",
+    )
     return parser
 
 
@@ -259,9 +267,9 @@ def main() -> None:
 
         resultado = gerar_mascaras_watershed(config, args.limite, debug=args.debug)
     elif args.comando == "treinar":
-        from src.treinamento import treinar_dois_modelos
+        from src.treinamento import treinar_experimento
 
-        resultado = treinar_dois_modelos(config)
+        resultado = treinar_experimento(config, modo_simples=args.modo_simples)
     elif args.comando == "avaliar":
         from src.avaliacao import avaliar_modelos
 
@@ -269,13 +277,13 @@ def main() -> None:
     else:
         from src.avaliacao import avaliar_modelos
         from src.difusao import gerar_imagens_sinteticas
-        from src.treinamento import treinar_dois_modelos
+        from src.treinamento import treinar_experimento
         from src.watershed import gerar_mascaras_watershed
 
         resultado = {
             "difusao": gerar_imagens_sinteticas(config, args.limite_geracao),
             "mascaras": gerar_mascaras_watershed(config, args.limite_geracao),
-            "treinamento": treinar_dois_modelos(config),
+            "treinamento": treinar_experimento(config, modo_simples=args.modo_simples),
             "avaliacao": avaliar_modelos(config, args.limite_avaliacao),
         }
     _imprimir(resultado)

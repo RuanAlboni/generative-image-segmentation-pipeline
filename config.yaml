@@ -11,9 +11,9 @@ experimento:
 # usada no TCC, esta disponivel em `configs/busi.yaml`. Ajuste os nomes em
 # `classes`, aliases opcionais e `classes_sem_mascara` conforme seu dataset.
 dados:
-  classes: [classe_a, classe_b, controle]
+  classes: [benign, malignant, normal]
   aliases: {}
-  classes_sem_mascara: [controle]
+  classes_sem_mascara: [normal]
 
 # Caminhos relativos sao resolvidos a partir da raiz do projeto.
 # Por padrao, a raiz e a pasta do YAML; `projeto.raiz` pode sobrescrever isso.
@@ -30,14 +30,22 @@ fontes:
   zip_teste: null
 
 divisao:
-  # Usada somente quando `preparar` recebe um unico ZIP. O restante forma o
-  # conjunto de desenvolvimento, que depois e dividido em treino/validacao.
-  proporcao_teste: 0.15
+  # Usada quando `preparar` recebe um unico ZIP. O teste externo fica fixo e
+  # nao participa da difusao, do ajuste de hiperparametros nem dos folds.
+  proporcao_teste: 0.20
 
-  # Proporcoes relativas ao conjunto de desenvolvimento. A mesma divisao
-  # estratificada e usada nos dois cenarios de treinamento.
-  proporcao_treino: 0.85
-  proporcao_validacao: 0.15
+  # Usadas somente pelo modo simples de depuracao (`treinar --modo-simples`)
+  # e por `preparar --exportar-divisao`.
+  proporcao_treino: 0.80
+  proporcao_validacao: 0.20
+
+validacao_cruzada:
+  # StratifiedKFold e aplicado somente ao conjunto de desenvolvimento.
+  folds: 5
+  embaralhar: true
+  # Depois dos folds, treina um par final em todo o desenvolvimento. O numero
+  # de epocas de cada cenario e a mediana da melhor epoca observada nos folds.
+  treinar_modelos_finais: true
 
 difusao:
   # Coloque seu checkpoint com este nome na pasta modelos_difusao.
@@ -49,7 +57,7 @@ difusao:
   # Na primeira execucao elas podem ser obtidas do Hub e ficam em cache.
   config_checkpoint: stabilityai/stable-diffusion-xl-base-1.0
   # Mantenha false na primeira execucao. Depois do cache, pode mudar para true.
-  somente_arquivos_locais: false
+  somente_arquivos_locais: true
   strength: 0.20
   guidance_scale: 1.5
   passos: 20
@@ -66,12 +74,26 @@ difusao:
     comum: >-
       preserve the original structure and geometry, realistic image,
       preserve relevant regions and boundaries
-    por_classe: {}
+
+    por_classe:
+      benigno: >-
+        breast ultrasound containing a benign lesion,
+        preserve the original lesion location, shape and boundary
+      maligno: >-
+        breast ultrasound containing a malignant lesion,
+        preserve the original lesion location, shape and boundary
+      normal: >-
+        normal breast ultrasound tissue, no focal lesion,
+        preserve normal anatomy and tissue structure
+
     negativo: >-
       text, watermark, artificial geometry, distorted structure,
       excessive blur, oversharpening, unrealistic artifacts
 
 watershed:
+  # Mediana na imagem em cinza antes do gradiente: 0 desativa; 3, 5, 7...
+  mediana_kernel: 7
+
   # Marker-controlled watershed guiado pela mascara da imagem de origem.
   # Rotulo 1: afinamento (thinning) da mascara original.
   # Rotulo 2: borda obtida pelo gradiente morfologico apos uma dilatacao ampla.

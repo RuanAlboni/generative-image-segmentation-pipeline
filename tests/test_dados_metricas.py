@@ -164,7 +164,7 @@ class TestDados(unittest.TestCase):
             self.assertEqual(len(amostras), 1)
             self.assertFalse(np.asarray(carregar_mascara_unificada(amostras[0])).any())
 
-    def test_preparar_um_zip_divide_desenvolvimento_teste_e_treino_validacao(self):
+    def test_preparar_um_zip_divide_desenvolvimento_e_teste_fixo(self):
         with tempfile.TemporaryDirectory() as pasta:
             raiz = Path(pasta)
             dataset_zip = self._criar_zip(raiz, "dataset.zip", 10, "unico")
@@ -193,8 +193,7 @@ class TestDados(unittest.TestCase):
             self.assertEqual(resultado["modo_preparacao"], "zip_unico")
             self.assertEqual(len(desenvolvimento), 24)
             self.assertEqual(len(teste), 6)
-            self.assertEqual(resultado["divisao"]["treino"], 18)
-            self.assertEqual(resultado["divisao"]["validacao"], 6)
+            self.assertEqual(resultado["divisao"]["desenvolvimento"], 24)
             self.assertEqual(resultado["divisao"]["teste"], 6)
             self.assertTrue({a.id for a in desenvolvimento}.isdisjoint({a.id for a in teste}))
             self.assertTrue(all(a.classe in CLASSES_TESTE for a in desenvolvimento + teste))
@@ -203,8 +202,7 @@ class TestDados(unittest.TestCase):
             with manifesto.open(encoding="utf-8", newline="") as arquivo:
                 linhas = list(csv.DictReader(arquivo))
             self.assertEqual(len(linhas), 30)
-            self.assertEqual(sum(l["particao"] == "treino" for l in linhas), 18)
-            self.assertEqual(sum(l["particao"] == "validacao" for l in linhas), 6)
+            self.assertEqual(sum(l["particao"] == "desenvolvimento" for l in linhas), 24)
             self.assertEqual(sum(l["particao"] == "teste" for l in linhas), 6)
             self.assertTrue(all(not Path(l["imagem"]).is_absolute() for l in linhas))
             self.assertTrue(all(not Path(m).is_absolute() for l in linhas for m in l["mascaras"].split(";") if m))
@@ -239,10 +237,49 @@ class TestDados(unittest.TestCase):
             self.assertEqual(resultado["modo_preparacao"], "zips_separados")
             self.assertEqual(len(desenvolvimento), 18)
             self.assertEqual(len(teste), 6)
-            self.assertEqual(resultado["divisao"]["treino"], 9)
-            self.assertEqual(resultado["divisao"]["validacao"], 9)
+            self.assertEqual(resultado["divisao"]["desenvolvimento"], 18)
             self.assertEqual(resultado["divisao"]["teste"], 6)
             self.assertTrue(all(a.imagem.stem.startswith("externo_") for a in teste))
+
+
+class TestValidacaoCruzada(unittest.TestCase):
+    def test_stratified_kfold_preserva_classes_e_cobre_validacao_uma_vez(self):
+        from src.treinamento import gerar_folds_estratificados
+
+        amostras = [
+            Amostra(Path(f"{classe}_{i}.png"), classe, ())
+            for classe in CLASSES_TESTE
+            for i in range(10)
+        ]
+        folds = gerar_folds_estratificados(amostras, n_splits=5, semente=12345)
+        self.assertEqual(len(folds), 5)
+        ids_validacao = []
+        for treino, validacao in folds:
+            self.assertTrue({a.id for a in treino}.isdisjoint({a.id for a in validacao}))
+            for classe in CLASSES_TESTE:
+                self.assertEqual(sum(a.classe == classe for a in validacao), 2)
+                self.assertEqual(sum(a.classe == classe for a in treino), 8)
+            ids_validacao.extend(a.id for a in validacao)
+        self.assertEqual(sorted(ids_validacao), sorted(a.id for a in amostras))
+
+    def test_cenario_aumentado_exclui_sinteticas_da_validacao(self):
+        from src.treinamento import construir_cenarios_para_divisao
+
+        treino = [
+            Amostra(Path("a.png"), "classe_a", ()),
+            Amostra(Path("b.png"), "classe_b", ()),
+        ]
+        validacao = [Amostra(Path("c.png"), "classe_a", ())]
+        sinteticas = [
+            Amostra(Path("a__sint_01.png"), "classe_a", (), True, "a"),
+            Amostra(Path("b__sint_01.png"), "classe_b", (), True, "b"),
+            Amostra(Path("c__sint_01.png"), "classe_a", (), True, "c"),
+        ]
+        _, aumentado, _ = construir_cenarios_para_divisao(treino, validacao, sinteticas)
+        origens_sinteticas = {a.id_origem for a in aumentado if a.sintetica}
+        self.assertEqual(origens_sinteticas, {"classe_a/a", "classe_b/b"})
+        self.assertNotIn("classe_a/c", origens_sinteticas)
+
 
 
 class TestMetricas(unittest.TestCase):

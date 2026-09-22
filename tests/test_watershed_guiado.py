@@ -48,6 +48,27 @@ class TestWatershedGuiado(unittest.TestCase):
         )
         self.assertEqual(diagnostico["gradiente_imagem"], "sobel")
 
+    def test_mediana_atenua_marcacao_sem_alterar_marcadores_ou_entrada(self):
+        imagem = np.full((64, 64), 160, dtype=np.uint8)
+        imagem[20:44, 20:44] = 60
+        imagem[30, 25:39] = 255  # Marcacao fina sobre a lesao.
+        original = imagem.copy()
+        mascara = np.zeros_like(imagem)
+        mascara[22:42, 22:42] = 255
+        _, sem, _ = segmentar_watershed_guiado(imagem, mascara, {"mediana_kernel": 0})
+        _, com, _ = segmentar_watershed_guiado(imagem, mascara, {"mediana_kernel": 3})
+        self.assertEqual(com["imagem_cinza_filtrada"][30, 30], 60)
+        np.testing.assert_array_equal(imagem, original)
+        np.testing.assert_array_equal(sem["imagem_cinza_filtrada"], original)
+        np.testing.assert_array_equal(sem["marcadores"], com["marcadores"])
+        self.assertFalse(np.array_equal(sem["gradiente_imagem"], com["gradiente_imagem"]))
+
+    def test_rejeita_janela_mediana_invalida(self):
+        imagem = np.zeros((32, 32), dtype=np.uint8)
+        for kernel in [-1, 1, 2, 4, 3.5, True, "3"]:
+            with self.subTest(kernel=kernel), self.assertRaisesRegex(ValueError, "mediana_kernel"):
+                segmentar_watershed_guiado(imagem, imagem, {"mediana_kernel": kernel})
+
 
 if __name__ == "__main__":
     unittest.main()

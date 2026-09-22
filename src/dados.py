@@ -366,6 +366,48 @@ def salvar_manifesto_divisao(
     return destino
 
 
+
+def salvar_manifesto_desenvolvimento_teste(
+    desenvolvimento: Sequence[Amostra],
+    teste: Sequence[Amostra],
+    destino: str | Path,
+    raiz_referencia: str | Path | None = None,
+) -> Path:
+    """Salva a separacao fixa entre desenvolvimento e teste externo.
+
+    O conjunto de desenvolvimento sera posteriormente particionado por
+    StratifiedKFold durante a validacao cruzada; o teste permanece intocado.
+    """
+    destino = Path(destino)
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    raiz = Path(raiz_referencia).expanduser().resolve() if raiz_referencia else None
+
+    def portatil(caminho: Path) -> str:
+        resolvido = caminho.expanduser().resolve()
+        if raiz is not None:
+            try:
+                return resolvido.relative_to(raiz).as_posix()
+            except ValueError:
+                pass
+        return resolvido.name
+
+    with destino.open("w", encoding="utf-8", newline="") as arquivo:
+        campos = ["particao", "classe", "id", "imagem", "mascaras"]
+        escritor = csv.DictWriter(arquivo, fieldnames=campos)
+        escritor.writeheader()
+        for particao, amostras in (("desenvolvimento", desenvolvimento), ("teste", teste)):
+            for amostra in amostras:
+                escritor.writerow(
+                    {
+                        "particao": particao,
+                        "classe": amostra.classe,
+                        "id": amostra.id,
+                        "imagem": portatil(amostra.imagem),
+                        "mascaras": ";".join(portatil(m) for m in amostra.mascaras),
+                    }
+                )
+    return destino
+
 def materializar_divisao(
     treino: Sequence[Amostra],
     validacao: Sequence[Amostra],

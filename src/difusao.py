@@ -15,7 +15,6 @@ from .dados import (
     classes_configuradas,
     classes_sem_mascara_configuradas,
     coletar_amostras,
-    dividir_originais,
 )
 
 EXTENSOES_CHECKPOINT = {".safetensors", ".ckpt"}
@@ -145,7 +144,11 @@ def gerar_imagens_sinteticas(
     limite: int | None = None,
     simulacao: bool = False,
 ) -> dict[str, int]:
-    """Gera variacoes apenas das amostras pertencentes ao subconjunto de treino."""
+    """Gera variacoes de todo o conjunto de desenvolvimento.
+
+    A separacao treino/validacao passa a ocorrer somente depois, durante o
+    StratifiedKFold. O conjunto de teste externo nunca e lido por esta etapa.
+    """
     cfg = config["difusao"]
     original = caminho_configurado(config, "original")
     aumentado = caminho_configurado(config, "aumentado")
@@ -157,16 +160,15 @@ def gerar_imagens_sinteticas(
         incluir_sinteticas=False,
         classes_sem_mascara=classes_sem_mascara,
     )
-    treino, _ = dividir_originais(
-        amostras,
-        proporcao_treino=float(config["divisao"]["proporcao_treino"]),
-        semente=int(config["experimento"]["semente"]),
-        classes=classes,
-    )
+    desenvolvimento = sorted(amostras, key=lambda a: a.id)
     if limite is not None:
-        treino = treino[:limite]
+        desenvolvimento = desenvolvimento[:limite]
     variacoes = int(cfg.get("variacoes_por_imagem", 1))
-    resumo = {"origens_elegiveis": len(treino), "geradas": 0, "ignoradas_existentes": 0}
+    resumo = {
+        "origens_elegiveis": len(desenvolvimento),
+        "geradas": 0,
+        "ignoradas_existentes": 0,
+    }
     if simulacao:
         return resumo
 
@@ -187,7 +189,7 @@ def gerar_imagens_sinteticas(
         if escrever_cabecalho:
             escritor.writeheader()
 
-        for indice, amostra in enumerate(treino):
+        for indice, amostra in enumerate(desenvolvimento):
             imagem_entrada, tamanho_original = _imagem_para_difusao(
                 amostra.imagem, int(cfg.get("multiplo_resolucao", 8))
             )

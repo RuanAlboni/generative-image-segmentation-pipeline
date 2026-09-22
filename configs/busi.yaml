@@ -16,7 +16,7 @@ experimento:
 # `classes_sem_mascara` as categorias em que ausencia de mascara significa
 # corretamente uma referencia vazia (por exemplo, casos saudaveis/negativos).
 dados:
-  classes: [benigno, maligno, normal]
+  classes: [benign, malignant, normal]
   aliases:
     benign: benigno
     malignant: maligno
@@ -37,14 +37,22 @@ fontes:
   zip_teste: null
 
 divisao:
-  # Usada somente quando `preparar` recebe um unico ZIP. O restante forma o
-  # conjunto de desenvolvimento, que depois e dividido em treino/validacao.
-  proporcao_teste: 0.15
+  # Usada quando `preparar` recebe um unico ZIP. O teste externo fica fixo e
+  # nao participa da difusao, do ajuste de hiperparametros nem dos folds.
+  proporcao_teste: 0.20
 
-  # Proporcoes relativas ao conjunto de desenvolvimento. A mesma divisao
-  # estratificada e usada nos dois cenarios de treinamento.
-  proporcao_treino: 0.85
-  proporcao_validacao: 0.15
+  # Usadas somente pelo modo simples de depuracao (`treinar --modo-simples`)
+  # e por `preparar --exportar-divisao`.
+  proporcao_treino: 0.80
+  proporcao_validacao: 0.20
+
+validacao_cruzada:
+  # StratifiedKFold e aplicado somente ao conjunto de desenvolvimento.
+  folds: 5
+  embaralhar: true
+  # Depois dos folds, treina um par final em todo o desenvolvimento. O numero
+  # de epocas de cada cenario e a mediana da melhor epoca observada nos folds.
+  treinar_modelos_finais: true
 
 difusao:
   # Coloque seu checkpoint com este nome na pasta modelos_difusao.
@@ -75,8 +83,8 @@ difusao:
       realistic speckle noise, low contrast tissue texture,
       preserve anatomy, realistic ultrasound appearance
     por_classe:
-      benigno: benign breast lesion, oval hypoechoic mass, smooth boundary
-      maligno: malignant breast lesion, irregular hypoechoic mass, uneven boundary
+      benign: benign breast lesion, oval hypoechoic mass, smooth boundary
+      malignant: malignant breast lesion, irregular hypoechoic mass, uneven boundary
       normal: normal breast ultrasound tissue, no focal tumor mass
     negativo: >-
       cartoon, illustration, painting, 3d render, color, text, watermark,
@@ -84,6 +92,9 @@ difusao:
       oversharpening, glossy or plastic texture
 
 watershed:
+  # Mediana na imagem em cinza antes do gradiente: 0 desativa; 3, 5, 7...
+  mediana_kernel: 7
+
   # Marker-controlled watershed guiado pela mascara da imagem de origem.
   # Rotulo 1: afinamento (thinning) da mascara original.
   # Rotulo 2: borda obtida pelo gradiente morfologico apos uma dilatacao ampla.

@@ -1,40 +1,36 @@
-# Ambiente Python
-.venv/
+# Ambientes virtuais
 venv/
+.venv/
+env/
+
+# Python
 __pycache__/
 *.py[cod]
 .pytest_cache/
-.mypy_cache/
-.ruff_cache/
 
-# IDE / sistema operacional
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
+# Datasets preparados
+original/
+aumentado/
+teste/
 
-# Datasets e imagens geradas
-original/**/*
-!original/**/.gitkeep
-aumentado/**/*
-!aumentado/**/.gitkeep
-teste/**/*
-!teste/**/.gitkeep
-particoes/
+# Arquivos de dataset
+Dataset.zip
+Dataset_test_partition.zip
+*.zip
 
-# Modelos e checkpoints
-modelos/**/*
-!modelos/**/.gitkeep
-modelos_difusao/**/*
-!modelos_difusao/**/.gitkeep
+# Modelos treinados e checkpoints de difusão
+modelos/
+modelos_difusao/
 *.pt
 *.pth
 *.ckpt
 *.safetensors
 
 # Resultados experimentais
-resultados/**/*
-!resultados/**/.gitkeep
+resultados/
 
-# Pacotes locais de dados
-*.zip
+# IDE / sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

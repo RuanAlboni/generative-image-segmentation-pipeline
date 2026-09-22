@@ -5,9 +5,9 @@ Pipeline experimental para comparar dois cenários de treinamento de segmentaç�
 1. **original** — modelo treinado apenas com imagens reais;
 2. **aumentado** — mesmo modelo treinado com as mesmas imagens reais mais imagens sintéticas geradas por `img2img`.
 
-As máscaras das imagens sintéticas são produzidas por **watershed guiado pela máscara da imagem real de origem**. A avaliação final é feita em um conjunto de teste composto apenas por imagens reais.
+As máscaras das imagens sintéticas são produzidas por watershed guiado pela máscara da imagem real de origem. A avaliação final é feita em um conjunto de teste composto apenas por imagens reais.
 
-A segmentação é sempre binária: **fundo (0) vs região de interesse (1)**. As classes configuradas no dataset são categorias dos casos/imagens usadas para organização, estratificação, prompts e relatórios; elas não são classes de saída da U-Net.
+A segmentação é sempre binária: fundo (0) vs região de interesse (1). As classes configuradas no dataset são categorias dos casos/imagens usadas para organização, estratificação, prompts e relatórios; elas não são classes de saída da U-Net.
 
 A seed contida em `config.yaml` controla a divisão dos dados, a inicialização do treinamento e a geração por difusão de forma a tornar o experimento replicável na medida do possível. Entretanto, resultados numericamente idênticos entre máquinas não são garantidos, pois versões de PyTorch, CUDA, cuDNN, drivers, GPU e determinadas operações podem introduzir diferenças.
 
@@ -15,6 +15,58 @@ O pipeline foi desenvolvido de forma genérica e testado utilizando o **BUSI (Br
 
 Para a geração das imagens sintéticas, foi utilizado o modelo de difusão **Stable Diffusion XL 1.0 Base (SDXL Base 1.0)**, carregado localmente a partir do checkpoint `sdxl_base_1.0.safetensors`. O pipeline utiliza a configuração correspondente à arquitetura `stabilityai/stable-diffusion-xl-base-1.0`.
 
+
+## QuickStart
+
+Depois de instalar as dependências, configurar as classes/prompts no YAML e colocar o checkpoint de difusão no caminho indicado por `difusao.modelo`, o experimento completo pode ser executado com poucos comandos.
+
+### Configuração genérica
+
+Com um único ZIP contendo todo o dataset, o comando `preparar` cria automaticamente o conjunto de desenvolvimento e o teste externo fixo conforme `divisao.proporcao_teste`:
+
+```bash
+python main.py preparar --dataset-zip <nome_do_dataset.zip> --sobrescrever
+python main.py validar
+python main.py pipeline
+```
+
+O comando `pipeline` executa, em sequência:
+
+```text
+1. difusão de todo o desenvolvimento
+2. geração das máscaras das sintéticas
+3. StratifiedKFold no desenvolvimento
+4. treinamento dos modelos finais
+5. avaliação no teste externo fixo
+```
+
+O `pipeline` **não executa a etapa `preparar`**, portanto a preparação deve ser feita ao menos uma vez antes da execução completa.
+
+Se o desenvolvimento e o teste externo já estiverem separados em dois ZIPs:
+
+```bash
+python main.py preparar --dataset-zip <nome_do_desenvolvimento.zip> --teste-zip <nome_do_teste.zip> --sobrescrever
+python main.py validar
+python main.py pipeline
+```
+
+### BUSI
+
+Para reproduzir o experimento com o preset do BUSI, acrescente `--config configs/busi.yaml` antes de cada subcomando:
+
+```bash
+python main.py --config configs/busi.yaml preparar --dataset-zip <Dataset_BUSI.zip> --sobrescrever
+python main.py --config configs/busi.yaml validar
+python main.py --config configs/busi.yaml pipeline
+```
+
+Para uma verificação rápida da integração sem executar os cinco folds completos, use o modo de depuração:
+
+```bash
+python main.py pipeline --modo-simples --limite-geracao 3 --limite-avaliacao 5
+```
+
+`--modo-simples` e os limites são destinados apenas à depuração e não devem ser usados nos resultados finais do experimento.
 
 ## Estrutura esperada do dataset
 
@@ -130,7 +182,7 @@ python main.py --config configs/busi.yaml preparar --dataset-zip dataset.zip --s
 
 ## 3. Preparar os dados
 
-A preparação aceita dois modos.
+A preparação separa primeiro um conjunto de teste externo fixo. Esse conjunto não participa da difusão, da geração de máscaras, da validação cruzada nem da escolha da duração do treinamento final.
 
 ### Um único ZIP
 
@@ -138,26 +190,22 @@ A preparação aceita dois modos.
 python main.py preparar --dataset-zip dataset.zip --sobrescrever
 ```
 
-O dataset completo é dividido de forma estratificada em desenvolvimento e teste; depois o desenvolvimento é dividido em treino e validação:
+O dataset é dividido de forma estratificada em:
 
 ```text
 dataset completo
 ├── desenvolvimento -> original/
-│   ├── treino
-│   └── validação
-└── teste -> teste/
+│   └── usado posteriormente no StratifiedKFold
+└── teste externo fixo -> teste/
+    └── usado somente na avaliação final
 ```
 
-As proporções são definidas em:
+A proporção do teste é configurada em:
 
 ```yaml
 divisao:
-  proporcao_teste: 0.15
-  proporcao_treino: 0.85
-  proporcao_validacao: 0.15
+  proporcao_teste: 0.20
 ```
-
-`proporcao_teste` vale sobre o dataset completo. `proporcao_treino` e `proporcao_validacao` valem sobre o conjunto de desenvolvimento.
 
 ### Desenvolvimento e teste em ZIPs separados
 
@@ -165,17 +213,17 @@ divisao:
 python main.py preparar --dataset-zip desenvolvimento.zip --teste-zip teste.zip --sobrescrever
 ```
 
-Nesse modo, o primeiro ZIP é usado integralmente como desenvolvimento e o segundo integralmente como teste. Apenas o desenvolvimento é dividido em treino e validação.
+Nesse modo, o primeiro ZIP é usado integralmente como desenvolvimento e o segundo integralmente como teste externo.
 
-Em ambos os modos, a divisão é estratificada por classe e reproduzível pela semente de `experimento.semente`. Imagem e máscaras associadas permanecem sempre na mesma partição.
+Em ambos os modos, imagem e máscaras associadas permanecem sempre na mesma partição. A preparação cria `resultados/divisao_preparacao.csv`, contendo apenas as partições `desenvolvimento` e `teste`, e copia o desenvolvimento real para `aumentado/`.
 
-A preparação cria `resultados/divisao_preparacao.csv` e copia o desenvolvimento real para `aumentado/`.
-
-Opcionalmente, materialize treino e validação em pastas:
+Opcionalmente, uma divisão simples treino/validação pode ser materializada apenas para depuração:
 
 ```bash
 python main.py preparar --dataset-zip dataset.zip --exportar-divisao --sobrescrever
 ```
+
+Essa divisão simples **não** é usada no experimento principal com validação cruzada.
 
 ## 4. Validar a estrutura
 
@@ -199,7 +247,9 @@ Geração real:
 python main.py difusao
 ```
 
-Somente imagens do subconjunto de treino são usadas como origem. Checkpoint, número de variações, `strength`, passos e prompts são definidos em `config.yaml`.
+A difusão é executada uma única vez sobre todo o conjunto de desenvolvimento. Isso permite reutilizar as mesmas sintéticas em todos os folds. O conjunto `teste/` nunca é processado por difusão.
+
+Checkpoint, número de variações, `strength`, passos e prompts são definidos em `config.yaml`.
 
 ## 6. Gerar máscaras das sintéticas
 
@@ -207,43 +257,112 @@ Somente imagens do subconjunto de treino são usadas como origem. Checkpoint, n�
 python main.py mascaras
 ```
 
-Para imagens cuja máscara de origem contém região de interesse, o pipeline aplica o watershed guiado. Quando a referência é vazia, a sintética recebe uma máscara vazia e o watershed não é aplicado.
+Antes do cálculo do gradiente, a imagem sintética em tons de cinza recebe um filtro de mediana do OpenCV (`cv2.medianBlur`). Configure `watershed.mediana_kernel` no YAML: `7` (padrão) aplica uma janela 7 × 7, `5` aplica 5 × 5 e `0` desativa para comparação com o comportamento anterior. Valores ativos devem ser inteiros ímpares maiores ou iguais a 3.
 
-Para salvar imagens intermediárias do processo:
+A filtragem modifica apenas a entrada do gradiente, sem substituir a imagem sintética salva nem a máscara original usada para os marcadores. Com `--debug`, o painel inclui o antes/depois em cinza e salva as etapas intermediárias em `resultados/watershed/debug/`.
+
+Para imagens cuja máscara de origem contém região de interesse, o pipeline aplica o watershed guiado. Quando a referência é vazia, a sintética recebe uma máscara vazia e o watershed não é aplicado.
 
 ```bash
 python main.py mascaras --debug --limite 5
 ```
 
-## 7. Treinar os dois modelos
+## 7. Validação cruzada e treinamento final
 
 ```bash
 python main.py treinar
 ```
 
-O cenário original usa apenas o treino real. O cenário aumentado usa o mesmo treino real mais sintéticas derivadas exclusivamente dessas imagens. A validação real é idêntica nos dois cenários.
+Por padrão, o comando executa **StratifiedKFold** somente sobre `original/` (o conjunto de desenvolvimento). O número de folds é configurado no YAML:
 
-Checkpoints:
+```yaml
+validacao_cruzada:
+  folds: 5
+  embaralhar: true
+  treinar_modelos_finais: true
+```
+
+Para cada fold são treinados dois modelos com a mesma partição de validação:
+
+```text
+Fold i
+├── cenário original
+│   └── originais do treino do fold
+└── cenário aumentado
+    └── mesmos originais + sintéticas derivadas somente dessas originais
+
+Validação do fold
+└── somente imagens originais
+```
+
+Uma sintética cuja imagem de origem esteja na validação daquele fold permanece no disco, mas é automaticamente excluída do treinamento. Assim, nenhuma versão derivada da validação vaza para o treino.
+
+Os resultados de cada fold ficam em:
+
+```text
+resultados/validacao_cruzada/
+├── folds.csv
+├── treinamentos_por_fold.csv
+├── metricas_por_fold.csv
+├── resumo_validacao_cruzada.csv
+├── comparacao_pareada_por_fold.csv
+├── comparacao_macro_todas.png
+├── comparacao_macro_regiao_presente.png
+└── fold_XX/
+```
+
+Os checkpoints intermediários ficam em `modelos/validacao_cruzada/fold_XX/`.
+
+Depois dos folds, o pipeline escolhe para cada cenário o número de épocas finais como a **mediana** da melhor época observada nos folds. Em seguida treina um modelo final usando todo o conjunto de desenvolvimento:
+
+```text
+modelo final original  -> 100% das imagens originais de desenvolvimento
+modelo final aumentado -> 100% das originais + sintéticas correspondentes
+```
+
+Esses modelos finais são salvos em:
 
 ```text
 modelos/unet_original.pt
 modelos/unet_aumentado.pt
 ```
 
-## 8. Avaliar
+Para uma depuração rápida sem os cinco folds:
+
+```bash
+python main.py treinar --modo-simples
+```
+
+O modo simples usa `divisao.proporcao_treino` e `divisao.proporcao_validacao` e não deve substituir o protocolo final do experimento.
+
+## 8. Avaliação final
 
 ```bash
 python main.py avaliar
 ```
 
-A avaliação usa apenas `teste/` e gera, entre outros:
+A avaliação usa apenas o conjunto fixo em `teste/`, composto por imagens originais que não participaram do treinamento nem da validação cruzada.
+
+O comando organiza os artefatos finais em duas pastas:
 
 ```text
-resultados/metricas_por_imagem.csv
-resultados/resumo_metricas.csv
-resultados/comparacao_iou_f1.png
-resultados/sobreposicoes/
+resultados/analise_modelo_final/
+resultados/sobreposicoes_modelo_final/
 ```
+
+A análise está integrada a `src/avaliacao.py`. Em `resultados/analise_modelo_final/` são gerados:
+
+```text
+comparacao_metricas_por_classe.png
+comparacao_metricas_todas_imagens.png
+comparacao_metricas_imagens_com_regiao.png
+curvas_aprendizado_comparadas.png
+metricas_por_imagem.csv
+metricas_por_classe.csv
+resumo_metricas.csv
+```
+
+`comparacao_metricas_imagens_com_regiao.png` usa o escopo `macro_regiao_presente`, isto é, considera apenas imagens cuja máscara de referência contém região de interesse. No BUSI, isso corresponde às imagens com lesão (benignas e malignas). As sobreposições visuais entre referência e predições dos dois modelos ficam separadas em `resultados/sobreposicoes_modelo_final/`.
 
 O resumo contém:
 
@@ -253,15 +372,7 @@ O resumo contém:
 
 Na implementação binária, F1 e Dice são equivalentes.
 
-## 9. Análise complementar
-
-```bash
-python scripts/analisar_resultados.py
-```
-
-O script agrega métricas por classe e gera gráficos comparativos e curvas de aprendizado conjuntas em `resultados/analise/`.
-
-## 10. Executar o pipeline completo
+## 9. Executar o pipeline completo
 
 Depois de preparar e validar os dados:
 
@@ -269,28 +380,40 @@ Depois de preparar e validar os dados:
 python main.py pipeline
 ```
 
-Para um teste rápido de integração:
+O fluxo principal passa a ser:
 
-```bash
-python main.py pipeline --limite-geracao 3 --limite-avaliacao 5
+```text
+preparar
+  -> teste externo fixo + desenvolvimento
+  -> difusão de todo o desenvolvimento
+  -> máscaras watershed + mediana
+  -> StratifiedKFold no desenvolvimento
+  -> treino final em todo o desenvolvimento
+  -> avaliação única no teste externo
+  -> análise complementar automática
 ```
 
-Os limites não devem ser usados em um experimento final.
+Para testar a integração sem validação cruzada completa:
+
+```bash
+python main.py pipeline --modo-simples --limite-geracao 3 --limite-avaliacao 5
+```
+
+Os limites e o modo simples não devem ser usados no experimento final.
 
 ## Principais diretórios
 
 ```text
-original/          desenvolvimento real
-  <classes>/
-aumentado/         desenvolvimento real + sintéticas
-  <classes>/
-teste/             teste real
-  <classes>/
-modelos/            checkpoints treinados
-modelos_difusao/    checkpoints de difusão
-resultados/          métricas, gráficos e manifestos
-scripts/             análise complementar
-src/                 implementação do pipeline
+original/                     desenvolvimento real
+aumentado/                    desenvolvimento real + sintéticas
+teste/                        teste externo fixo, somente real
+modelos/                      modelos finais
+modelos/validacao_cruzada/    checkpoints dos folds
+modelos_difusao/              checkpoints de difusão
+resultados/                    avaliação final e manifestos
+resultados/validacao_cruzada/ resultados dos folds
+resultados/analise/            agregações e gráficos da avaliação final
+src/                          implementação do pipeline
 ```
 
 ## Testes
@@ -299,12 +422,12 @@ Localmente:
 
 ```bash
 python -m unittest discover -s tests -v
-python -m compileall main.py src scripts tests
+python -m compileall main.py src tests
 ```
 
 ## Reprodutibilidade
 
-Para comparações válidas, mantenha a mesma semente e divisão entre os cenários, nunca gere sintéticas a partir de validação/teste e versione o `config.yaml` usado no experimento. Datasets, checkpoints e resultados pesados não devem ser versionados no repositório.
+Para comparações válidas, mantenha a mesma semente e os mesmos folds entre os cenários. As sintéticas podem ser pré-geradas para todo o desenvolvimento, mas uma sintética só pode entrar no treino quando sua imagem original também pertence ao treino daquele fold; o teste externo nunca é sintetizado nem usado no ajuste. Versione o `config.yaml` usado no experimento. Datasets, checkpoints e resultados pesados não devem ser versionados no repositório.
 
 O pipeline tem finalidade experimental e de pesquisa e não constitui ferramenta de diagnóstico.
 

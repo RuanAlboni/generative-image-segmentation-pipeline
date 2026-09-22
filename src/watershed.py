@@ -135,6 +135,21 @@ def _calcular_gradiente_imagem(
     )
 
 
+def _preparar_imagem_cinza(imagem: np.ndarray, cfg: dict[str, Any], cv2):
+    """Preserva a imagem em cinza e filtra somente a entrada do gradiente."""
+    kernel = cfg.get("mediana_kernel", 3)
+    if (
+        isinstance(kernel, bool)
+        or not isinstance(kernel, int)
+        or (kernel != 0 and (kernel < 3 or kernel % 2 == 0))
+    ):
+        raise ValueError("watershed.mediana_kernel deve ser 0 (desativado) ou um inteiro impar >= 3.")
+    imagem = np.asarray(imagem).astype(np.uint8)
+    cinza = cv2.cvtColor(imagem, cv2.COLOR_RGB2GRAY) if imagem.ndim == 3 else imagem
+    filtrada = cv2.medianBlur(cinza, kernel) if kernel else cinza.copy()
+    return cinza, filtrada
+
+
 def segmentar_watershed_guiado(
     imagem_sintetica: np.ndarray,
     mascara_origem: np.ndarray,
@@ -148,11 +163,7 @@ def segmentar_watershed_guiado(
     """
     cv2 = _cv2()
 
-    imagem = np.asarray(imagem_sintetica)
-    if imagem.ndim == 3:
-        cinza = cv2.cvtColor(imagem.astype(np.uint8), cv2.COLOR_RGB2GRAY)
-    else:
-        cinza = imagem.astype(np.uint8)
+    cinza, cinza_filtrada = _preparar_imagem_cinza(imagem_sintetica, cfg, cv2)
 
     mascara = (np.asarray(mascara_origem) > 0).astype(np.uint8) * 255
     if mascara.shape != cinza.shape:
@@ -164,7 +175,7 @@ def segmentar_watershed_guiado(
         mascara = (mascara > 0).astype(np.uint8) * 255
 
     marcadores, passos = _criar_marcadores(mascara, cfg, cv2)
-    gradiente, metodo_gradiente = _calcular_gradiente_imagem(cinza, cfg, cv2)
+    gradiente, metodo_gradiente = _calcular_gradiente_imagem(cinza_filtrada, cfg, cv2)
 
     try:
         from skimage.segmentation import watershed
@@ -188,6 +199,7 @@ def segmentar_watershed_guiado(
 
     passos = {
         "imagem_cinza": cinza,
+        "imagem_cinza_filtrada": cinza_filtrada,
         **passos,
         "marcadores": marcadores,
         "gradiente_imagem": gradiente,
@@ -196,6 +208,7 @@ def segmentar_watershed_guiado(
     }
     diagnostico = {
         "gradiente_imagem": metodo_gradiente,
+        "mediana_kernel": cfg.get("mediana_kernel", 3),
         "pixels_mascara_origem": int(np.count_nonzero(mascara)),
         "pixels_marcador_interno": int(np.count_nonzero(passos["marcador_interno"])),
         "pixels_marcador_externo": int(np.count_nonzero(passos["marcador_externo"])),
@@ -234,6 +247,7 @@ def _salvar_debug(
     imagem_sintetica: np.ndarray,
     passos: dict[str, np.ndarray],
     destino: Path,
+    mediana_kernel: int = 3,
 ) -> None:
     """Salva cada etapa e um painel unico para inspecao visual do watershed."""
     import matplotlib.pyplot as plt
@@ -269,6 +283,8 @@ def _salvar_debug(
 
     arquivos = {
         "01_imagem_sintetica.png": imagem_base,
+        "01a_imagem_cinza.png": passos["imagem_cinza"],
+        "01b_imagem_apos_mediana.png": passos["imagem_cinza_filtrada"],
         "02_mascara_origem.png": mascara_origem,
         "03_mascara_origem_sobre_sintetica.png": sobreposicao_origem,
         "04_mascara_dilatada.png": passos["mascara_dilatada"],
@@ -282,9 +298,13 @@ def _salvar_debug(
     for nome, array in arquivos.items():
         Image.fromarray(array).save(destino / nome)
 
-    figura, eixos = plt.subplots(2, 5, figsize=(19, 8))
+    figura, eixos = plt.subplots(3, 4, figsize=(16, 12))
     itens = [
         (imagem_base, "Imagem sintetica", None),
+        (passos["imagem_cinza"], "Cinza antes da mediana", "gray"),
+        (passos["imagem_cinza_filtrada"],
+         f"Apos mediana {mediana_kernel} x {mediana_kernel}" if mediana_kernel else "Mediana desativada",
+         "gray"),
         (mascara_origem, "Mascara original", "gray"),
         (sobreposicao_origem, "Origem sobre sintetica", None),
         (passos["mascara_dilatada"], "Dilatacao externa", "gray"),
@@ -296,7 +316,7 @@ def _salvar_debug(
         (sobreposicao_resultado, "Resultado sobre sintetica", None),
     ]
     for eixo, (conteudo, titulo, cmap) in zip(eixos.flat, itens):
-        eixo.imshow(conteudo, cmap=cmap)
+        eixo.imshow(conteudo, cmap=cmap, vmin=0, vmax=255)
         eixo.set_title(titulo)
         eixo.axis("off")
     figura.tight_layout()
@@ -368,9 +388,11 @@ def gerar_mascaras_watershed(
         )
 
         if not np.any(mascara_origem):
+            cinza, cinza_filtrada = _preparar_imagem_cinza(imagem_rgb, cfg, _cv2())
             mascara_resultado = np.zeros((altura, largura), dtype=np.uint8)
             passos = {
-                "imagem_cinza": np.asarray(Image.fromarray(imagem_rgb).convert("L")),
+                "imagem_cinza": cinza,
+                "imagem_cinza_filtrada": cinza_filtrada,
                 "mascara_origem": (mascara_origem > 0).astype(np.uint8) * 255,
                 "mascara_dilatada": np.zeros((altura, largura), dtype=np.uint8),
                 "gradiente_dilatacao": np.zeros((altura, largura), dtype=np.uint8),
@@ -383,6 +405,7 @@ def gerar_mascaras_watershed(
             }
             diagnostico = {
                 "gradiente_imagem": "nao_aplicado_sem_regiao",
+                "mediana_kernel": cfg.get("mediana_kernel", 3),
                 "pixels_mascara_origem": int(np.count_nonzero(mascara_origem)),
                 "pixels_marcador_interno": 0,
                 "pixels_marcador_externo": 0,
@@ -429,6 +452,7 @@ def gerar_mascaras_watershed(
                 imagem_rgb,
                 passos,
                 resultados / "debug" / amostra.classe / amostra.imagem.stem,
+                mediana_kernel=cfg.get("mediana_kernel", 3),
             )
 
     campos = [
@@ -438,6 +462,7 @@ def gerar_mascaras_watershed(
         "mascara_origem",
         "mascara_watershed",
         "gradiente_imagem",
+        "mediana_kernel",
         "pixels_mascara_origem",
         "pixels_marcador_interno",
         "pixels_marcador_externo",
